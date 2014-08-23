@@ -1,0 +1,75 @@
+-----------------------
+Cathy File Format v2.24
+-----------------------
+
+Remaining questions: 
+  Exact format of version identifier at beginning of file
+  4 unknown bytes in directory listing
+  5 unknown bytes in volume listing
+
+-----------
+File header
+-----------
+6 bytes -- header, seemingly remain constant across all volumes (27 06 a4 d0 05 00)
+  Seems to be version identifier
+4 bytes -- volume date (little Endian, Unix timestamp)
+* bytes -- null-terminated string, indexed path ("F:\")
+* bytes -- null-terminated string, volume name ("Juegos 8")
+* bytes -- null-terminated string, recorded name ("")
+4 bytes -- serial number in hex ('14', '71', '4a', 'e2' becomes "E24A-7114")
+* bytes -- null-terminated string, comment
+4 bytes -- free space (IEEE 754)
+  For CD-ROMs and DVDs, seems to be set to 00 00 80 BF -- flag value interpreted as "---N/A---"
+
+------------------
+Directories header
+------------------
+4 bytes -- how many directory records follow
+* bytes -- null-terminated string, root name
+
+-----------
+Directories
+-----------
+All directories listed near beginning -- root, sub, sub-sub, etc.
+  Directories are also represented among listing of files
+
+First directory is root directory
+  12 bytes, how many files, unknown, filesize of directory
+
+4 bytes -- how many files (does not include directories! just files) directory contains (recursively)
+4 bytes -- unknown, always (00 00 00 00)
+4 bytes -- filesize of directory (seemingly floating point, but I can't figure out format, no IEEE 754)
+  Example: A5 DC C4 41 = 667.581 MiB
+
+--------------
+Entries header
+--------------
+4 bytes -- number of directories and files ("D+F") in volume
+  Increasing the last byte makes Cathy take an incredibly long time to launch, and to gradually eat more memory
+    Making it "00 00 00 01" made Cathy take on the order of ten minutes to launch, and eat over a gig of RAM
+    When it did finally launch, D+F was shown as 2^24, just as one would expect
+  Given performance observations, Cathy must allocate memory for all the directory entries that follow based on this number
+    Indeed, if it is set to 1 for volume with >1 directory entries, only one directory entry shows up when browsing directory hierarchy -- none of the others are loaded
+    Setting it to more than number of actual directory entries does not seem to have deleterious effect
+
+-------
+Entries
+-------
+4 bytes -- entry date
+4 bytes -- depends if file or directory
+  - Files: filesize as unsigned int
+    Example of conversion in Ruby: 0x6c*256**0 + 0x05*256**1 + 0xfc*256**2 + 0x3f*256**3
+  - Directories: index of directory in directories section (negative value)
+    Size of directory taken from record in "directories" section
+2 bytes -- what directory entry belongs to
+  00 00 = root directory
+  Directories don't seem to be explicitly numbered -- instead, this value refers to position 
+  of directory in list of directories
+* bytes -- null-terminated string, entryname
+
+----
+Misc
+----
+Difference between Cathy v2.15.2 and v2.24 file formats is not trivial
+  v2.15.2 indicates string length by prefixing string with byte representing length
+  v2.24 omits this, instead storing null terminator byte at end of string
